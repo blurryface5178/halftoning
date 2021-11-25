@@ -25,7 +25,6 @@ class Dither:
         return 255 * floor(value/128)
 
     def floyd_steinberg_dither(self, image_file):
-        print('Hello')
         new_img = Image.open(image_file)
 
         new_img = new_img.convert('RGB')

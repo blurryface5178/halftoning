@@ -9,6 +9,7 @@ def main():
 
     dithering = Halftoning(image_bw, 'fs')
     dithering.run()
+    dithering.save('cat_hw_out.jpg')
     dithering.show()
 
     while(cv2.waitKey(0) != 27):

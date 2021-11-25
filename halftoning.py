@@ -6,35 +6,49 @@ import numpy as np
 
 class Halftoning:
     def __init__(self, image, method = 'fs'):
-        self.image = image.copy()
+        self.image = image.astype(float)
         if method == 'fs':
             self.method = self.floyd_steinberg
         elif method == 'dt':
             self.method = self.noise
         else:
             print('Not a known method')
-        self.output = image.copy()
+        self.output = self.image.copy()
 
-    def normalized(self, pix, min=0, max=255):
-        f = ((pix - min) / (max - min)) - 0.5
-        return f
+    def normalized(self, image, min=0, max=255):
+        w, h = image.shape
+        for y in range(h):
+            for x in range(w):
+                image[x][y] = ((image[x][y] - min) / (max - min)) - 0.5
+        return image
+    
+    def unnormalized(self, image, min=0, max=255):
+        w, h = image.shape
+        for y in range(h):
+            for x in range(w):
+                image[x][y] = ((image[x][y] + 0.5) * (max - min)) + min
+        return image
 
-    def threshold(self, pix, thresh=127):
-        return 255 * floor(pix / (thresh))
+    def threshold(self, pix, thresh=0):
+        return 255 * floor(pix / thresh)
 
     def floyd_steinberg(self, resize=None, min=0, max=255):
+        # output = self.normalized(self.output)
+        output = self.output.copy()
+
         if isinstance(resize, tuple):
-            output = cv2.resize(self.output, resize)
-        else:
-            output = self.output.copy()
-        
+            output = cv2.resize(output, resize)
+
         w, h = output.shape
-        
+        err = 0
+
         for j in range(0, h):
             for i in range(0, w):
-                fq = self.threshold(output[i][j])
-                err = output[i][j] - fq * (max - min) - min 
+                # print("Old", output[i][j])
+                fq = self.threshold(output[i][j], 127)
+                err = output[i][j] - fq
                 output[i][j] = fq
+                # print("New", output[i][j])
 
                 if(i < w-1):
                     output[i+1][j  ] += round(err * 7/16)
