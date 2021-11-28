@@ -10,7 +10,7 @@ class Halftoning:
         if method == 'fs':
             self.method = self.floyd_steinberg
         elif method == 'dt':
-            self.method = self.noise
+            self.method = self.dithering
         else:
             print('Not a known method')
         self.output = self.image.copy()
@@ -22,13 +22,6 @@ class Halftoning:
                 image[x][y] = ((image[x][y] - min) / (max - min)) - 0.5
         return image
     
-    def unnormalized(self, image, min=0, max=255):
-        w, h = image.shape
-        for y in range(h):
-            for x in range(w):
-                image[x][y] = ((image[x][y] + 0.5) * (max - min)) + min
-        return image
-
     def threshold(self, pix, thresh=0):
         return 255 * floor(pix / thresh)
 
@@ -44,11 +37,9 @@ class Halftoning:
 
         for j in range(0, h):
             for i in range(0, w):
-                # print("Old", output[i][j])
                 fq = self.threshold(output[i][j], 127)
                 err = output[i][j] - fq
                 output[i][j] = fq
-                # print("New", output[i][j])
 
                 if(i < w-1):
                     output[i+1][j  ] += round(err * 7/16)
@@ -61,7 +52,22 @@ class Halftoning:
 
         self.output = output
 
-    def noise(self, resize=None, min=0, max=255):
+    def generate_noise(self, w, h, b=9):
+        phase = np.random.normal(size=(w, h)) * np.pi
+        x = np.arange(-w/2, w/2)
+        y = np.arange(-h/2, h/2)
+        z = np.zeros((w, h))
+        for i in range(w-1):
+            for j in range(h-1):
+                z[i][j] = x[i] ** 2 + y[j] ** 2
+        mag = 1 - np.exp(-np.pi*z / b**2)
+        noise = mag * (np.cos(phase) + 1j * np.sin(phase))
+
+        inverse_noise = np.fft.ifft2(noise)
+        in_real = (inverse_noise.real - inverse_noise.real.min()) / (inverse_noise.real.max() - inverse_noise.real.min())
+        return in_real
+
+    def dithering(self, resize=None, min=0, max=255):
         if isinstance(resize, tuple):
             output = cv2.resize(self.output, resize)
         else:
@@ -69,28 +75,13 @@ class Halftoning:
         
         w, h= output.shape
 
-        noise = np.random.uniform(-np.pi, np.pi, size=(w, h))
-        plt.imshow(noise)
+        noise = self.generate_noise(w, h)
+        output = (output - output.min()) / (output.max() - output.min())
 
-        for x in range(w):
-            for y in range(h):
-                if (x-w/2)**2+(y-h/2)**2 < 10000:
-                    noise[x][y] /= 3.14
-        plt.figure()
-        plt.imshow(noise)
+        added = cv2.add(output, noise)
+        _, added = cv2.threshold(added, 1, 2, cv2.THRESH_BINARY)
 
-        idft_noise = np.fft.ifft2(noise)
-        mask = idft_noise.real # - min / (max - min)
-        output = output - min / (max - min)
-
-        plt.figure()
-        plt.imshow(np.absolute(idft_noise))
-
-        plt.show()
-        output = cv2.add(output, mask, dtype=cv2.CV_8U)
-        _, output = cv2.threshold(output, 127, 255, cv2.THRESH_BINARY)
-
-        self.output = output.copy()
+        self.output = added.copy() * 255
     
     def run(self, resize=None, min=0, max=1):
         if isinstance(resize, tuple):
