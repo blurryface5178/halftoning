@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 
-from Halftoning import Halftoning
+from halftoning import Halftoning
 
 def main():
     filename = 'Gradient.png'
