@@ -33,11 +33,10 @@ class Halftoning:
             output = cv2.resize(output, resize)
 
         w, h = output.shape
-        err = 0
 
         for j in range(0, h):
             for i in range(0, w):
-                fq = self.threshold(output[i][j], 127)
+                fq = self.threshold(output[i][j], 255)
                 err = output[i][j] - fq
                 output[i][j] = fq
 
