@@ -3,30 +3,26 @@ from math import floor
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 class Halftoning:
     def __init__(self, image, method = 'fs'):
         self.image = image.astype(float)
         if method == 'fs':
             self.method = self.floyd_steinberg
-        elif method == 'dt':
-            self.method = self.dithering
+        elif method == 'blue':
+            self.method = self.blue_noise
+        elif method == 'remove':
+            self.method = self.dehalftoning
         else:
             print('Not a known method')
         self.output = self.image.copy()
-
-    def normalized(self, image, min=0, max=255):
-        w, h = image.shape
-        for y in range(h):
-            for x in range(w):
-                image[x][y] = ((image[x][y] - min) / (max - min)) - 0.5
-        return image
     
-    def threshold(self, pix, thresh=0):
+    def threshold(self, pix, thresh=255):
         return 255 * floor(pix / thresh)
+    
+    def normalized(self, array):
+        return (array.real - array.min()) / (array.max() - array.min())
 
-    def floyd_steinberg(self, resize=None, min=0, max=255):
-        # output = self.normalized(self.output)
+    def floyd_steinberg(self, resize=None):
         output = self.output.copy()
 
         if isinstance(resize, tuple):
@@ -50,23 +46,44 @@ class Halftoning:
                     output[i+1][j+1] += round(err * 1/16)
 
         self.output = output
+    
+    def generate_grid(self, m, n):
+        # This portion of code is supposed to speed by the computation by 4x but its a little buggy
+        # Hence we end up withh the slow functional code
+        # I'm working on another method that should be even faster
 
-    def generate_noise(self, w, h, b=9):
-        phase = np.random.normal(size=(w, h)) * np.pi
-        x = np.arange(-w/2, w/2)
-        y = np.arange(-h/2, h/2)
-        z = np.zeros((w, h))
-        for i in range(w-1):
-            for j in range(h-1):
+        # z = np.zeros((m, n)).astype(float)
+        # for i in range(int(m/2)-1):
+        #     for j in range(int(n/2)-1):
+        #         z[int(m/2)+i][int(n/2)+j] = (float(i)/m) ** 2 + (float(j)/n) ** 2
+    
+        # z[ : int(m/2),int(n/2):] = np.flip(z[int(m/2): ,int(n/2): ], 0)
+        # z[ : , :int(n/2)] = np.flip(z[:, int(n/2):n], 1)
+        
+        x = np.arange(-m/2, m/2) / m
+        y = np.arange(-n/2, n/2) / n
+        z = np.zeros((m, n))
+        mask = np.zeros((m, n))
+        for i in range(m-1):
+            for j in range(n-1):
                 z[i][j] = x[i] ** 2 + y[j] ** 2
+        return z
+
+    def generate_noise(self, m, n, a=1, b=100):
+        phase = np.random.normal(size=(m, n)) * np.pi
+        z = self.generate_grid(m, n)
         mag = 1 - np.exp(-np.pi*z / b**2)
         noise = mag * (np.cos(phase) + 1j * np.sin(phase))
 
+        print('mag', mag*255)
+        cv2.imshow('mag', z)
+        cv2.imshow('phase', phase)
+
         inverse_noise = np.fft.ifft2(noise)
-        in_real = (inverse_noise.real - inverse_noise.real.min()) / (inverse_noise.real.max() - inverse_noise.real.min())
+        in_real = self.normalized(inverse_noise)
         return in_real
 
-    def dithering(self, resize=None, min=0, max=255):
+    def blue_noise(self, resize=None):
         if isinstance(resize, tuple):
             output = cv2.resize(self.output, resize)
         else:
@@ -75,37 +92,56 @@ class Halftoning:
         w, h= output.shape
 
         noise = self.generate_noise(w, h)
-        output = (output - output.min()) / (output.max() - output.min())
+        show = np.abs(noise) * 255.0
+        cv2.imwrite('bluenoise.png', show.astype(int))
 
-        added = cv2.add(output, noise)
-        _, added = cv2.threshold(added, 1, 2, cv2.THRESH_BINARY)
+        output = self.normalized(output)
+
+        added = cv2.add(output, noise.real)
+        _, added = cv2.threshold(added, 0.9, 2, cv2.THRESH_BINARY)
 
         self.output = added.copy() * 255
     
-    def run(self, resize=None, min=0, max=1):
+    def run(self, resize=None):
         if isinstance(resize, tuple):
-            output = cv2.resize(self.image, resize)
+            show = cv2.resize(self.image, resize)
         else:
-            output = self.image.copy()
+            show = self.image.copy()
         
-        cv2.imshow('Input', output)
-        return self.method(resize, min, max)
+        # cv2.imshow('Input', show)
+        return self.method(resize)
 
     def show(self):
+        cv2.imshow('Output', self.output.astype(np.uint8))
 
-        cv2.imshow('Output', self.output)
-
-    def save(self, filename='output'):
+    def save(self, filename='output.jpg'):
         cv2.imwrite(filename, self.output)
 
-def color_fs(image, resize = None):
-        b, g, r = cv2.split(image)
+    def generate_mask(self, m, n, a=1.0, b=0.03):
+        z = self.generate_grid(m, n)
+        mask = a * np.exp(-np.pi*z / b**2)
+        return mask
+
+    def dehalftoning(self, resize=None):
+        w, h = self.image.shape
         
-        fs_red = Halftoning(r, 'fs')
-        fs_red.run(resize)
-        fs_green = Halftoning(g, 'fs')
-        fs_green.run(resize)
-        fs_blue = Halftoning(b, 'fs')
-        fs_blue.run(resize)
-    
-        return cv2.merge([fs_blue.output, fs_green.output, fs_red.output]) 
+        if w % 2 > 0:
+            image_bw = cv2.resize(self.image, (h, w-1))
+        elif h % 2 > 0:
+            image_bw = cv2.resize(self.image, (h-1, w))
+
+        h, w = self.image.shape
+        
+        F = np.fft.fft2(self.image)
+        F = np.fft.fftshift(F)
+
+        mask = self.generate_mask(w, h)
+
+        product = np.multiply(F.T, mask)
+        
+        ifft_product = np.fft.ifft2(product)
+        ifft_mag = np.abs(ifft_product) ** 2
+
+        normalized = ifft_mag.T / ifft_mag.max() * 255
+
+        self.output = normalized.astype(int)
