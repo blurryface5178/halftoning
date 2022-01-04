@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class Halftoning:
-    def __init__(self, image, method = 'fs'):
+    def __init__(self, image, method = 'fs', debug = True):
         self.image = image.astype(float)
+        self.debug = debug
         if method == 'fs':
             self.method = self.floyd_steinberg
         elif method == 'blue':
@@ -44,7 +45,8 @@ class Halftoning:
                     output[i  ][j+1] += round(err * 5/16)
                 if(i < w-1 and j < h-1):
                     output[i+1][j+1] += round(err * 1/16)
-
+        if(self.debug):
+            print('Floyd Steinberg Error Difussion Complete')
         self.output = output
     
     def generate_grid(self, m, n):
@@ -74,10 +76,9 @@ class Halftoning:
         z = self.generate_grid(m, n)
         mag = 1 - np.exp(-np.pi*z / b**2)
         noise = mag * (np.cos(phase) + 1j * np.sin(phase))
-
-        print('mag', mag*255)
-        cv2.imshow('mag', z)
-        cv2.imshow('phase', phase)
+        if(self.debug):
+            cv2.imshow('mag', z)
+            cv2.imshow('phase', phase)
 
         inverse_noise = np.fft.ifft2(noise)
         in_real = self.normalized(inverse_noise)
@@ -98,8 +99,10 @@ class Halftoning:
         output = self.normalized(output)
 
         added = cv2.add(output, noise.real)
-        _, added = cv2.threshold(added, 0.9, 2, cv2.THRESH_BINARY)
-
+        _, added = cv2.threshold(added, 0.7, 2, cv2.THRESH_BINARY)
+        
+        if(self.debug):
+            print('Blue Noise Dithering Complete')
         self.output = added.copy() * 255
     
     def run(self, resize=None):
@@ -108,16 +111,24 @@ class Halftoning:
         else:
             show = self.image.copy()
         
-        # cv2.imshow('Input', show)
+        if(self.debug):
+            print('Running on...')
         return self.method(resize)
 
-    def show(self):
-        cv2.imshow('Output', self.output.astype(np.uint8))
+    def show(self, window_name = 'Output'):
+        if(self.debug):
+            print('Displaying output')
+        cv2.imshow(window_name, self.output.astype(np.uint8))
 
     def save(self, filename='output.jpg'):
+        if(self.debug):
+            print('Saving as file '+filename)
         cv2.imwrite(filename, self.output)
+    
+    def get_output(self):
+        return self.output
 
-    def generate_mask(self, m, n, a=1.0, b=0.03):
+    def generate_mask(self, m, n, a=1.0, b=.19):
         z = self.generate_grid(m, n)
         mask = a * np.exp(-np.pi*z / b**2)
         return mask
@@ -143,5 +154,6 @@ class Halftoning:
         ifft_mag = np.abs(ifft_product) ** 2
 
         normalized = ifft_mag.T / ifft_mag.max() * 255
-
+        if(self.debug):
+            print('Removal of Halftoning Complete')
         self.output = normalized.astype(int)
